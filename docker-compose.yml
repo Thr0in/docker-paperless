@@ -1,0 +1,62 @@
+services:
+  broker:
+    image: docker.io/library/redis:8
+    container_name: broker-1
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    networks:
+      - internal
+
+  db:
+    image: docker.io/library/postgres:17
+    container_name: db-1
+    restart: unless-stopped
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: paperless
+      POSTGRES_USER: paperless
+      POSTGRES_PASSWORD: paperless
+    networks:
+      - internal
+
+  webserver:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    container_name: webserver-1
+    restart: unless-stopped
+    depends_on:
+      - db
+      - broker
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${APP_NAME}.entrypoints=websecure"
+      - "traefik.http.routers.${APP_NAME}.rule=Host(`${APP_URL}`)"
+      - "traefik.http.routers.${APP_NAME}.tls=true"
+      - "traefik.http.routers.${APP_NAME}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.${APP_NAME}.loadbalancer.server.port=${APP_PORT}"
+      - "traefik.http.routers.${APP_NAME}.service=${APP_NAME}"
+    networks:
+      - traefik
+      - internal
+    volumes:
+      - data:/usr/src/paperless/data
+      - media:/usr/src/paperless/media
+      - ./export:/usr/src/paperless/export
+      - ./consume:/usr/src/paperless/consume
+    env_file: docker-compose.env
+    environment:
+      PAPERLESS_REDIS: redis://broker:6379
+      PAPERLESS_DBHOST: db
+
+volumes:
+  data:
+  media:
+  pgdata:
+  redisdata:
+
+networks:
+  traefik:
+    external: true
+  internal:
+    external: false
